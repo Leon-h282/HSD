@@ -14,7 +14,15 @@ CFG = {
     stride: 5,
     moveScale: 10,
 
-    holdTime: 2000,
+    holdTime: 800,
+
+    firstProbsThreshold: 0.75,
+    secondProbsThreshold: 0.6,
+
+    BLACK: "#000000",
+    GREEN: "#02d140",
+    YELLOW: "#fbff00",
+    RED: "#d10202",
 };
 
 const container = document.getElementById("camera_container");
@@ -59,7 +67,8 @@ class Detector {
 
             // load labels.json
             const response = await fetch(CFG.labels_path);
-            this.labels = await response.json();
+            const labelsData = await response.json();
+            this.labels = Object.values(labelsData)
             console.log("✔ Labels loaded:", this.labels);
         } catch (error) {
             console.error("Error loading model or labels:", error);
@@ -149,7 +158,7 @@ class Detector {
     };
 
 
-    makeSequence() {
+    async makeSequence() {
         let sequence = []
 
         for (let i = 0; i < this.rawSequence.length - 1; i ++) {
@@ -201,7 +210,7 @@ class Detector {
         };
 
         if (this.isModelLoaded && this.rawSequence.length === timestep + 1) {
-            let sequence = this.makeSequence();
+            let sequence = await this.makeSequence();
             await this.predict(sequence);
         };
 
@@ -220,6 +229,8 @@ class Detector {
             
             // Lấy mảng xác suất (probability) đầu ra
             const scores = await prediction.data();
+
+            this.probs = Array.from(scores)
             
             // Tìm index có xác suất cao nhất (Tương đương np.argmax)
             const maxIndex = prediction.argMax(-1).dataSync()[0];
@@ -230,7 +241,7 @@ class Detector {
             prediction.dispose();
 
             // 4. Nếu độ tự tin > 75%, hiển thị kết quả ra màn hình
-            if (maxScore > 0.75 && this.labels) {
+            if (maxScore > CFG.firstProbsThreshold && this.labels) {
                 this.label = this.labels[maxIndex];
                 // console.log(`Prediction: ${actionLabel} (${(maxScore * 100).toFixed(2)}%)`);
             } else {
@@ -255,6 +266,62 @@ class Detector {
         const predResultElement = document.getElementById("text");
         predResultElement.innerText = await this.final_label;
     }
+
+
+    drawMultiBars() {
+        // Nếu chưa có kết quả xác suất hoặc chưa load xong nhãn thì thoát
+        if (!this.probs || !this.labels) return;
+
+        const barWidth = 200;  // Chiều dài tối đa của thanh (100%)
+        const barHeight = 25;  // Độ dày thanh
+        const gap = 15;        // Khoảng cách giữa các dòng
+        
+        // Vị trí xuất hiện ở góc trên bên phải màn hình sau khi đã bị lật gương
+        // (X gốc cách lề phải 230px, khi lật gương nó sẽ biến thành bên trái)
+        const startX = canvasElement.width - barWidth - 30; 
+        let startY = 10;
+
+        canvasCtx.save();
+
+        this.labels.forEach((label, index) => {
+            let prob = this.probs[index] || 0; // Lấy xác suất từ model (0.0 -> 1.0)
+            let currentBarWidth = prob * barWidth;
+            
+            // Lấy màu từ mảng màu cấu hình (nếu không có thì dùng màu xanh tạm thời)
+            let color = CFG.BLACK;
+            if (prob >= CFG.firstProbsThreshold) {
+                color = CFG.GREEN;
+            } else {
+                if (prob > CFG.secondProbsThreshold) {
+                    color = CFG.YELLOW;
+                } else {
+                    color = CFG.RED;
+                }
+            }
+
+            // 1. Vẽ nền mờ phía sau thanh
+            canvasCtx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            canvasCtx.fillRect(startX, startY, barWidth, barHeight);
+
+            // 2. Vẽ thanh phần trăm thực tế (Xác suất càng cao thanh càng dài)
+            canvasCtx.fillStyle = color;
+            canvasCtx.fillRect(startX, startY, currentBarWidth, barHeight);
+
+            // 3. Viết chữ đè lên thanh
+            canvasCtx.fillStyle = "#FFFFFF";
+            canvasCtx.font = "bold 14px Arial";
+            canvasCtx.textAlign = "left";
+            canvasCtx.textBaseline = "middle";
+            
+            let text = `${label}: ${(prob * 100).toFixed(0)}%`;
+            canvasCtx.fillText(text, startX + 10, startY + barHeight / 2);
+
+            // Tăng Y để vẽ dòng tiếp theo xuống phía dưới
+            startY += barHeight + gap;
+        });
+
+        canvasCtx.restore();
+    }
 }
 
 
@@ -276,10 +343,10 @@ function checkHandInFrame(results) {
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         handStatusElement.innerText = "Hand In Frame: Yes";
-        handStatusElement.style.color = "#02d140";
+        handStatusElement.style.color = CFG.GREEN;
     } else {
         handStatusElement.innerText = "Hand In Frame: No";
-        handStatusElement.style.color = "#d10202";
+        handStatusElement.style.color = CFG.RED;
     }
 }
 
@@ -327,6 +394,7 @@ function onResults(results) {
 
     detector.detect(results, CFG.timestep, CFG.stride);
     detector.rightOnFrame();
+    detector.drawMultiBars();
 }
 
 hands.onResults(onResults);
