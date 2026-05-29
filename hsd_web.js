@@ -8,7 +8,7 @@ CFG = {
     frame_width: 1280,
     frame_height: 720,
 
-    timestep: 30,
+    timestep: 30, // Số khung hình LSTM cần (như trong model.json)
     model_path: "./tfjs_model/tfjs_model/model.json",
     labels_path: "./LABELS/labels.json",
     stride: 5,
