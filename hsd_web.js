@@ -10,7 +10,7 @@ CFG = {
 
     timestep: 30,
     model_path: "./tfjs_model/tfjs_model/model.json",
-    labels_path: "./Labels/labels.json",
+    labels_path: "./LABELS/labels.json",
     stride: 5,
     moveScale: 10,
 
